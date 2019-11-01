@@ -1,0 +1,99 @@
+import geopandas as gpd
+import geopy
+import shapely as sh
+from shapely.geometry import Point
+
+def coordToArray(geopdcoord):
+    coord = str(geopdcoord['geometry'][0])
+    j = coord.replace("POINT (","") #remove palavra POINT (
+    i = j.replace(")","").split(" ") # remove ultimo parenteses e splita o que sobrou resultando num array com as 2 coord
+    ponto = Point(float(i[0]),float(i[1]))
+    return ponto
+    
+coor = gpd.tools.geocode("Bento Gonçalves 2000, Porto Alegre", timeout=5, provider='here', app_id='SEU ID AQUI', app_code='SEU CODE AQUI')
+latlong = coordToArray(coor)
+latlong
+
+#traz o endereço completo pesquisado
+coordendas['address'][0]
+
+#traz a coordenada do endereço pesquisado
+coordendas['geometry'][0]
+
+import pandas as pd
+import numpy as np
+
+df = pd.read_excel("SUA_PLANILHA.xlsx")
+
+idhere='SEU ID AQUI'
+codehere='SEU CODE AQUI'
+
+#seleciona apenas linhas que tem nome de rua diferente de vazio ou -  e de um ano específico, se o seu cabeçalho for diferente deve renomear as colunas que está pesquisando abaixo
+mask = (pd.isna(df['Geocode']) & 
+       (pd.notna(df['Nome Rua'])|(df['Nome Rua']!='-')) &
+       ((df['Ano']>=2006) &(df['Ano']<=2009))) # máscara para selecionar apenas dados sem geo code e com rua 
+dfSgeo = df.loc[mask] #seleciona linhas com as restrições passada na varíavel mask
+
+dfSgeo.shape
+
+#novo filtro por um grupo específico de cidades
+mask = (((dfSgeo['Município']=='Porto Alegre')|
+         (dfSgeo['Município']=='Canoas')|
+         (dfSgeo['Município']=='Viamão')| 
+         (dfSgeo['Município']=='Cachoeirinha')|
+         (dfSgeo['Município']=='Gravataí')|
+         (dfSgeo['Município']=='São Leopoldo')|
+         (dfSgeo['Município']=='Novo Hamburgo')|
+         (dfSgeo['Município']=='Alvorada')|
+         (dfSgeo['Município']=='Sapucaia do Sul')|
+         (dfSgeo['Município']=='Guaíba')|
+         (dfSgeo['Município']=='Eldorado do Sul')|
+         (dfSgeo['Município']=='Esteio')) & pd.notna(dfSgeo['Nro']))
+
+dfteste = dfSgeo.loc[mask]
+dfteste.shape
+
+newgeocode = []
+
+#LAÇO DE REPETIÇÃO QUE PEGA COLUNAS DE RUA, NRO E CIDADE E CONSULTA NO HERE WEGO MAPS
+import time
+i=0
+for i in range(len(dfteste.index)):
+#for i in range(5):    
+    time.sleep(0.4) #tempo pro programa pensar
+    endereco = str(dfteste.iat[i,14])+' '+str(dfteste.iat[i,15])+', '+str(dfteste.iat[i,12]) #colunas de rua, nro e cidade
+    #print(endereco)
+    
+    tentativas = [3,5,7,10,15]    
+    for tmout in tentativas: #laço para tentar pesquisar com timouts diferentes
+        try:
+            coordenadas=gpd.tools.geocode(endereco, timeout=tmout,provider='here', app_id=idhere, app_code=codehere)
+            newgeocode.append(coordToArray(coordenadas))
+            #print(tmout)
+            break # se der certo ele quebra o for
+        except:
+            if tmout == 15: #se chegou até o time out 15 e entrou na exceção então insere coordenada do guaíba
+                coordenadas = Point(-51.278229,-30.068491) #coordenadas no meio do lago Guaíba
+                newgeocode.append(coordenadas)
+                break
+            else:
+                continue #se ainda não chegou no tentou o time out 15 então continua tentando  
+
+dfNgeo = pd.DataFrame({'Geocode Novo':newgeocode})
+dfteste.index = range(len(dfteste)) #reseta os index do conjunto que foi pesquisado para possibilitar o concat
+dfFinal = pd.concat([dfteste,dfNgeo], axis=1, sort=False) #une o Df de pesquisa com o df de coordendas obtidas
+dfFinal.head()
+
+with pd.ExcelWriter('Georreferenciado2005.xlsx', mode='a', engine='openpyxl') as writer: 
+    dfFinal.to_excel(writer, sheet_name='2006') 
+    
+import folium
+from folium import plugins
+
+mapa = folium.Map(location=[-29.923361,-51.177189],zoom_start=10)
+conjunto=[]
+for coordenadas in newgeocode:
+    conjunto.append([coordenadas.y,coordenadas.x])
+    
+mapa.add_child(plugins.HeatMap(conjunto))
+mapa
