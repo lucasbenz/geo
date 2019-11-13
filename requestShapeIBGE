@@ -1,0 +1,24 @@
+import requests
+import json
+import geojson
+
+#configurações para acessar o site do IBGE
+headers = {
+    'Content-Type': 'application/json;charset=UTF-8',
+    'User-Agent': 'google-colab',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Connection': 'keep-alive',
+}
+
+codCidade = 4314902 #código da cidade de porto alegre
+
+shapes = requests.get("https://servicodados.ibge.gov.br/api/v2/malhas/"+codCidade+"/?formato=application/vnd.geo+json&resolucao=5",
+                              headers=headers)
+#atribui string json do shape apra variável
+a = shapes.json()
+
+#transforma script geojson em um objeto do tipo polígono
+poly = Polygon(list(geojson.utils.coords(a)))
+poly
