@@ -1,0 +1,87 @@
+import folium
+from folium import plugins
+import pandas as pd
+import numpy as np
+import json
+import geopandas as gp
+from shapely.geometry import Point
+from shapely.geometry.polygon import Polygon
+import geojson
+import requests
+import openpyxl
+
+#função para ajustar base de excel que vem em string e formatar para o Tipo Point
+def coordToArray(geopdcoord):
+    j = geopdcoord.replace("POINT (","") #remove palavra POINT (
+    i = j.replace(")","").split(" ") # remove ultimo parenteses e splita o que sobrou resultando num array com as 2 coord
+    ponto = Point(float(i[0]),float(i[1]))
+    return ponto
+    
+#importação do excel com os dados georreferenciados
+df = pd.read_excel("Georreferenciado.xlsx")
+
+#criação de data frame com códigos do ibge das cidades pesquisadas
+cidades = {'municípios':['Porto Alegre',
+                         'Canoas',
+                         'Viamão',
+                         'Cachoeirinha',
+                         'Gravataí',
+                         'São Leopoldo',
+                         'Novo Hamburgo',
+                         'Alvorada',
+                         'Sapucaia do Sul',
+                         'Guaíba',
+                         'Eldorado do Sul',
+                         'Esteio'],
+           'código':[4314902,
+                     4304606,
+                     4323002,
+                     4303103,
+                     4309209,
+                     4318705,
+                     4313409,
+                     4300604,
+                     4320008,
+                     4309308,
+                     4306767,
+                     4307708]}     
+       
+dfCodCidades =pd.DataFrame(cidades)
+
+arrayShapes = []
+
+#configurações para fazer requests no ibge
+headers = {
+    'Content-Type': 'application/json;charset=UTF-8',
+    'User-Agent': 'google-colab',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Connection': 'keep-alive',
+}
+
+#laço de repetição para fazer um request no site do IBGE e buscar as malhas/shapes disponíveis
+for cod in cidades['código']:
+    #para cada repetição eu troco o código que quero pesquisar na url abaixo, conforme a cidade
+    shapes = requests.get("https://servicodados.ibge.gov.br/api/v2/malhas/"+str(cod)+"/?formato=application/vnd.geo+json&resolucao=5",
+                              headers=headers)
+    #transforma string geojson em um polígono e depois armazena em um lista
+    arrayShapes.append(Polygon(list(geojson.utils.coords(shapes.json()))))
+
+#adiciona o array com mais uma coluna do data frame dfCodCidades    
+dfCodCidades['ShapesIBGE'] = arrayShapes   
+
+#varre o df principal buscando o nome do municipio e a cidade
+ajuste = []
+for x, y in zip(df['Município'], df['Geocode Novo']):
+    #procura no df na coluna onde o municipio é igual x e retorna o valor da terceira coluna que tem os Shapes do IBGE
+    poly = dfCodCidades.loc[dfCodCidades['municípios']==x].iloc[0][2]
+    #verifica se o ponto y  está n dentro do shape da cidade e adicona o resulatado em um array
+    ajuste.append(poly.contains(coordToArray(y)))
+ 
+ #adiciona o array com a comparação de ponto e polígono no df principal
+df['Ajustar Coordenadas'] = ajuste    
+
+#salva em excel, em uma nova aba o df com a coluna de compração entre polígono e ponto
+with pd.ExcelWriter('Georreferenciado.xlsx', mode='a', engine='openpyxl') as writer: 
+    df.to_excel(writer, sheet_name='CoordAdjust')
